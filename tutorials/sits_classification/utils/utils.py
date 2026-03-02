@@ -52,7 +52,8 @@ def fill_ts(ts: torch.Tensor, doys: torch.Tensor, full_doys: torch.Tensor):
 def get_params(model: torch.nn.Module):
     '''TODO: compute the number of trainable parameters of a model.
     '''
-    raise NotImplementedError
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return total_params
 
 
 def get_flops(model, inp: Union[torch.Tensor, Tuple], with_backward=False):

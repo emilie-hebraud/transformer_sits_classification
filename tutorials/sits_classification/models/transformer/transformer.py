@@ -107,13 +107,13 @@ class Transformer(nn.Module):
        
 
     def forward(self, data, doys=None):
-        '''TODO: implement the forward pass.
+        '''implement the forward pass.
         '''
         if doys is None:
             doys = torch.zeros((data.shape[0], data.shape[1]))
 
-        embeddings = ...
-        temporal_mask = ...
+        embeddings = self.embedding(data)
+        temporal_mask = (data.sum(dim=-1) != 0).float()
         
         if self.return_attns:
             enc_output, attns = self.encoder(embeddings, doys, temporal_mask)
@@ -121,7 +121,8 @@ class Transformer(nn.Module):
             enc_output = self.encoder(embeddings, doys, temporal_mask)
             attns = None
 
-        enc_output = ...
+        enc_output = enc_output.squeeze(dim=1)
+        print("enc_output : ", enc_output.shape)
 
         return enc_output, attns
     

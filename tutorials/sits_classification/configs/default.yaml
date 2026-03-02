@@ -1,5 +1,5 @@
 # Data
-data_folder: /home/emilie/Documents/projet_deep/s2_agri_pixel_set
+data_folder: /home/emilie/Documents/IODAA/classification_site/s2_agri_pixel_set
 n_channels: 10
 n_pixels: 64
 pad_value: 0
@@ -24,7 +24,7 @@ scale_emb_or_prj: prj
 pos_embedding:
   n_position: 365
   T: 1000
-return_attns: False
+return_attns: True # False à remettre
 classifier:
   d_inner: 128
 learnable_query: False
@@ -35,4 +35,4 @@ spectral_indices: False
 channels:
 
 # Results folder
-res_dir: /home/emilie/Documents/projet_deep/tutorials/results
+res_dir: /home/emilie/Documents/IODAA/projet_deep/tutorials/results

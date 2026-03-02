@@ -107,3 +107,5 @@ class PixelSetData(Dataset):
         image = torch.load(image_path)
         label = self.labels[idx].item()
         return image,doys,label
+    
+#def mean_attention(encoder, test_dataset, select_class):

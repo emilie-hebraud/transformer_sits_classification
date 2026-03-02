@@ -34,7 +34,7 @@ n_classes = len(np.unique(dataset.labels))
 padding = Padding(pad_value=cfg['pad_value'])
 
 data_loader = torch.utils.data.DataLoader(
-    ...
+    dataset, cfg["batch_size"], suffle=True
 )
 
 encoder = Transformer(
