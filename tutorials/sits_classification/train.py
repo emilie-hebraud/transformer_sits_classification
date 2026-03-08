@@ -19,15 +19,15 @@ from models.classifiers import ShallowClassifier
 from utils.focal_loss import FocalLoss
 from utils.utils import get_flops, get_params
 
-def accuracy(preds, target):
-    valid = torch.where(preds==target, 1,0)
+def Accuracy(preds, target):
+    valid = torch.where(preds==target, 1,0).float()
     score = valid.mean()
     return score
     
-def main(cfg):
+def main(cfg, yaml_path=None,model_path=None):
     os.makedirs(os.path.dirname(cfg['res_dir']), exist_ok=True)
 
-    with open(os.path.join(cfg['res_dir'], 'default.yaml'), 'w') as file:
+    with open(os.path.join(cfg['res_dir'], yaml_path), 'w') as file:
         yaml.dump(cfg, file)
 
     dataset = PixelSetData(cfg['data_folder'])
@@ -37,11 +37,11 @@ def main(cfg):
     batch_size = cfg["batch_size"]
 
     train_data_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size, shuffle=True
+        train_dataset, batch_size, shuffle=True, collate_fn=padding.pad_collate
     )
 
     val_data_loader = torch.utils.data.DataLoader(
-        val_dataset, batch_size= cfg["batch_size"], shuffle=True
+        val_dataset, batch_size= cfg["batch_size"], shuffle=True, collate_fn=padding.pad_collate
     )
 
     encoder = Transformer(
@@ -116,7 +116,7 @@ def main(cfg):
             logits = classifier(z)
             loss = criterion(logits, labels)
             pred = torch.softmax(logits, dim=1).argmax(dim=1)
-            accuracy = accuracy(pred, labels)
+            accuracy = Accuracy(pred, labels)
 
             loss.backward()
             optimizer.step()
@@ -141,7 +141,7 @@ def main(cfg):
                 logits = classifier(z)
             loss = criterion(logits, labels)
             pred = torch.softmax(logits, dim=1).argmax(dim=1)
-            accuracy = accuracy(pred,labels)
+            accuracy = Accuracy(pred,labels)
 
             val_loss += loss.item() / len(val_data_loader)
             val_acc += accuracy / len(val_data_loader)
@@ -156,7 +156,7 @@ def main(cfg):
                         'encoder': encoder.state_dict(),
                         'classifier': classifier.state_dict(),
                         'optimizer': optimizer.state_dict()},
-                        os.path.join(cfg['res_dir'], 'best_model.pth.tar'))
+                        os.path.join(cfg['res_dir'], model_path))
 
 
 if __name__ == '__main__':

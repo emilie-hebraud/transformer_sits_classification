@@ -86,15 +86,19 @@ class Transformer(nn.Module):
     def encoder(self, x, doys, mask):
         enc_slf_attn_list = []
 
-        # -- Forward
         if self.scale_emb:
             enc_output = x * self.d_model ** 0.5
         else:
             enc_output = x
 
         device = x.device
-        pos_embedding = self.position_enc(doys).to(device)
-        enc_output = self.dropout(enc_output + pos_embedding)
+        # doys is [B, T] — compute pos encoding for each sample and stack
+        pos_embeddings = torch.stack(
+            [self.position_enc(doys[i]).squeeze(0) for i in range(doys.shape[0])],
+            dim=0
+        )  # [B, T, d_model]
+        
+        enc_output = self.dropout(enc_output + pos_embeddings)
         enc_output = self.layer_norm(enc_output)
 
         for enc_layer in self.layer_stack:
@@ -104,29 +108,55 @@ class Transformer(nn.Module):
         if self.return_attns:
             return enc_output, enc_slf_attn_list
         return enc_output
-       
 
-    def forward(self, data, doys=None):
-        '''implement the forward pass.
-        '''
+    """def forward(self, data, doys=None):
         if doys is None:
             doys = torch.zeros((data.shape[0], data.shape[1]))
 
         embeddings = self.embedding(data)
-        temporal_mask = (data.sum(dim=-1) != 0).float()
         
+        # Must be [B, T] for MultiHeadAttention to reshape correctly
+        pad_mask = (doys == self.pad_value)  # [B, T], True = padded position
         if self.return_attns:
-            enc_output, attns = self.encoder(embeddings, doys, temporal_mask)
+            enc_output, attns = self.encoder(embeddings, doys, pad_mask)
         else:
-            enc_output = self.encoder(embeddings, doys, temporal_mask)
+            enc_output = self.encoder(embeddings, doys, pad_mask)
             attns = None
 
-        enc_output = enc_output.squeeze(dim=1)
-        print("enc_output : ", enc_output.shape)
+        # Aggregate over time, ignoring padded positions
+        valid_mask = (~pad_mask).float().unsqueeze(-1)  # [B, T, 1]
+        enc_output = (enc_output * valid_mask).sum(dim=1) / valid_mask.sum(dim=1).clamp(min=1)
+        # enc_output: [B, d_model]"""
+
+    def forward(self, data, doys=None):
+        if doys is None:
+            doys = torch.zeros((data.shape[0], data.shape[1]))
+
+        embeddings = self.embedding(data)
+
+        pad_mask = (doys == self.pad_value)  # [B, T], True = padded position
+
+        if self.return_attns:
+            enc_output, attns = self.encoder(embeddings, doys, pad_mask)
+        else:
+            enc_output = self.encoder(embeddings, doys, pad_mask)
+            attns = None
+
+        if self.learnable_query:
+            # LearnableQueryMHA outputs [B, num_queries, d_model] — just mean-pool
+            enc_output = enc_output.mean(dim=1)
+        else:
+            # Standard path: masked mean over valid timesteps
+            valid_mask = (~pad_mask.bool()).float().unsqueeze(-1)  # [B, T, 1]
+            enc_output = (enc_output * valid_mask).sum(dim=1) / valid_mask.sum(dim=1).clamp(min=1)
+        # enc_output: [B, d_model]
 
         return enc_output, attns
-    
 
+
+
+
+        return enc_output, attns
 class EncoderLayer(nn.Module):
     ''' Compose with two layers
     Source: https://github.com/jadore801120/attention-is-all-you-need-pytorch/blob/master/transformer/Layers.py 

@@ -39,4 +39,4 @@ channels:
 compute_values: False
   
 # Results folder
-res_dir: /home/emilie/Documents/IODAA/projet_deep/tutorials/results
+res_dir: /home/emilie/Documents/IODAA/classification_site/tutorials/results

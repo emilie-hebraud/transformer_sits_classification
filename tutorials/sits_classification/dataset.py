@@ -63,7 +63,7 @@ class Padding:
 
 
 class PixelSetData(Dataset):
-    '''TODO: Complete the dataset class to load the S2-Agri Pixel-Set data.
+    '''Complete the dataset class to load the S2-Agri Pixel-Set data.
     '''
     def __init__(self, folder, quantification_value=10000, set='train'):
         super(PixelSetData, self).__init__()
@@ -105,7 +105,7 @@ class PixelSetData(Dataset):
         image_path = os.path.join(self.image_folder, f"sample_{idx}.pt")
         doys = torch.load(doys_path)
         image = torch.load(image_path)
-        label = self.labels[idx].item()
+        label = self.labels[idx]
         return image,doys,label
     
 #def mean_attention(encoder, test_dataset, select_class):

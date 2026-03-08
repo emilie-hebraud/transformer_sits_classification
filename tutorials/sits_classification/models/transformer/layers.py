@@ -17,8 +17,11 @@ class EmbeddingLayer(nn.Module):
         self.conv = nn.Conv1d(in_channels=n_channels,out_channels=d_model,kernel_size=(n_pixels,), stride=(1,))
 
     def forward(self, x):
-        print(x.shape)
-        return self.conv(x)
+        B, T, C, P = x.shape
+        x = x.view(B*T, C, P)   # fusion batch et timesteps
+        out = self.conv(x)       # Conv1d sur P avec C_in = 10
+        out = out.view(B, T, -1)
+        return out
     
 
 class NDVI(nn.Module):
@@ -177,7 +180,9 @@ class Temporal_Aggregator(nn.Module):
             print("mask type: ",type(mask))
             print("mask shape: ", mask.shape)   
             masked_data = data * mask
-            raise NotImplementedError
+            sum_masked_data = masked_data.sum(dim=1)
+            count_masked_data = mask.sum(dim=1)
+            out = sum_masked_data / (count_masked_data + 1e-8)  # avoid division by zero
         elif self.mode == 'identity':
             out = data
         else:

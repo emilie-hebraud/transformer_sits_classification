@@ -6,6 +6,8 @@ import numpy as np
 import re
 from datetime import datetime
 from typing import Union, Tuple, Optional, List
+from tqdm import tqdm
+
 
 
 def dates2doys(dates: list[str]):
@@ -50,7 +52,7 @@ def fill_ts(ts: torch.Tensor, doys: torch.Tensor, full_doys: torch.Tensor):
 
 
 def get_params(model: torch.nn.Module):
-    '''TODO: compute the number of trainable parameters of a model.
+    '''compute the number of trainable parameters of a model.
     '''
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     return total_params
@@ -125,3 +127,106 @@ def rgb_render(
         data_ready = data_ready[:, :, 0]
 
     return data_ready, out_dmin, out_dmax
+def mean_attention(model, dataset, select_class=None, batch_size=64, pad_value=0, max_len=24, device=None):
+    """
+    Retorna Tensor [H, T_out] (1D por head), compatível com o plot do TP.
+
+    Funciona tanto para attn quadrada [T,T] quanto para attn com learnable query:
+    [Q,K] (ex.: Q=1, K=T).
+    """
+    from dataset import Padding
+
+    model.eval()
+    if device is None:
+        device = next(model.parameters()).device
+
+    padding = Padding(pad_value=pad_value)
+    loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+        collate_fn=padding.pad_collate,
+    )
+
+    sum_mask = None      # [H, T_out]
+    count_mask = None    # [H, T_out]
+    T_out = None
+
+    with torch.no_grad():
+        for data, doys, labels in tqdm(loader, desc="Test"):
+            # filtra por classe
+            if select_class is not None:
+                m = (labels == select_class)
+                if m.sum().item() == 0:
+                    continue
+                data = data[m]
+                doys = doys[m]
+
+            data = data.to(device)
+            doys = doys.to(device).long()  # [B, T_doys]
+
+            _, attns = model(data, doys)
+
+            # normaliza attns -> tensor [L,B,H,*,*] ou [B,H,*,*]
+            if isinstance(attns, (list, tuple)):
+                # lista por layer: cada item pode ser [B,H,Q,K] ou [B,Q,K] se H=1
+                a0 = attns[0]
+                if a0.dim() == 3:  # [B,Q,K] -> add H=1
+                    attns = [a.unsqueeze(1) for a in attns]  # [B,1,Q,K]
+                attns = torch.stack(attns, dim=0)           # [L,B,H,Q,K]
+
+            if attns.dim() == 5:        # [L,B,H,Q,K]
+                A = attns.mean(dim=0)   # [B,H,Q,K]
+            elif attns.dim() == 4:      # [B,H,Q,K]
+                A = attns
+            else:
+                raise ValueError(f"Formato inesperado de attns: {attns.shape}")
+
+            B, H, Q, K = A.shape
+
+            # define T_out pelo eixo de KEYS (é isso que vira eixo-x no plot)
+            if T_out is None:
+                T_out = min(K, max_len)  # max_len só como limite de segurança
+                sum_mask = torch.zeros((H, T_out), device=device, dtype=A.dtype)
+                count_mask = torch.zeros((H, T_out), device=device, dtype=torch.float32)
+
+            # timesteps válidos (no TP normalmente padding é 0)
+            valid = (doys != 0)  # [B, T_doys]
+
+            for b in range(B):
+                idx = torch.where(valid[b])[0]          # índices válidos no doys
+                if idx.numel() == 0:
+                    continue
+
+                # idx tem que existir no eixo das KEYS (K)
+                idx = idx[idx < K]
+                if idx.numel() == 0:
+                    continue
+
+                tb = int(min(idx.numel(), T_out))
+                idx = idx[:tb]
+
+                Ab = A[b]  # [H,Q,K]
+
+                if Q == K:
+                    # atenção quadrada: dá pra cortar queries e keys
+                    Ab2 = Ab[:, idx][:, :, idx]         # [H,tb,tb]
+                    mask_1d = Ab2.mean(dim=1)           # média sobre queries -> [H,tb]
+                else:
+                    # learnable query / CLS: só corta nas KEYS
+                    Ab2 = Ab[:, :, idx]                 # [H,Q,tb]
+                    mask_1d = Ab2.mean(dim=1)           # média sobre Q -> [H,tb]
+
+                sum_mask[:, :tb] += mask_1d
+                count_mask[:, :tb] += 1.0
+
+    if sum_mask is None or count_mask.sum().item() == 0:
+        raise ValueError(f"Nenhuma amostra encontrada para select_class={select_class}")
+
+    mean_mask = sum_mask / torch.clamp(count_mask, min=1.0)  # [H,T_out]
+
+    # opcional: normaliza por head (deixa comparável e limita valores)
+    mean_mask = mean_mask / (mean_mask.sum(dim=1, keepdim=True) + 1e-12)
+
+    return mean_mask.detach().cpu()

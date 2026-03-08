@@ -68,7 +68,7 @@ class MultiHeadAttention(nn.Module):
         
 
 class LearnableQueryMultiHeadAttention(nn.Module):
-    '''TODO: update the Multi-Head Attention module with a learnable query
+    '''update the Multi-Head Attention module with a learnable query
     '''
 
     def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1, compute_values=True):
@@ -76,6 +76,81 @@ class LearnableQueryMultiHeadAttention(nn.Module):
 
     def forward(self):
         raise NotImplementedError
+
+class LearnableQueryMultiHeadAttention(nn.Module):
+    ''' Multi-head attention with DETR-style learnable queries.
+    Queries are learned parameters. Keys/values come from the input.
+    '''
+
+    def __init__(self, n_head, d_model, d_k, d_v, num_queries=24, dropout=0.1, compute_values=True):
+        super().__init__()
+
+        self.n_head = n_head
+        self.d_k = d_k
+        self.d_v = d_v
+        self.num_queries = num_queries
+        self.compute_values = compute_values
+
+        # DETR-style learnable queries
+        self.query_embed = nn.Parameter(torch.randn(num_queries, d_model))
+
+        # projections
+        self.w_qs = nn.Linear(d_model, n_head * d_k, bias=False)
+        self.w_ks = nn.Linear(d_model, n_head * d_k, bias=False)
+
+        if compute_values:
+            self.w_vs = nn.Linear(d_model, n_head * d_v, bias=False)
+
+        self.fc = nn.Linear(n_head * d_v, d_model, bias=False)
+
+        self.attention = ScaledDotProductAttention(temperature=d_k ** 0.5)
+
+        self.dropout = nn.Dropout(dropout)
+        self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
+    def forward(self, x, mask=None):
+        """
+        x: Tensor of shape (B, len_k, d_model)
+        mask: optional mask of shape (B, len_k)
+        """
+        B, len_k, _ = x.size()
+        num_q = self.num_queries
+        n_head, d_k, d_v = self.n_head, self.d_k, self.d_v
+
+        # expand learnable queries safely for batch
+        q = self.query_embed.unsqueeze(0).expand(B, -1, -1).contiguous()  # (B, num_q, d_model)
+
+        residual = q
+
+        # linear projections
+        q = self.w_qs(q).view(B, num_q, n_head, d_k)
+        k = self.w_ks(x).view(B, len_k, n_head, d_k)
+
+        if self.compute_values:
+            v = self.w_vs(x).view(B, len_k, n_head, d_v)
+        else:
+            # ensure v has correct last dimension
+            v = x.unsqueeze(2).expand(B, len_k, n_head, x.size(-1))
+
+        # transpose for attention: (B, n_head, seq_len, d_k/d_v)
+        q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+
+        if mask is not None:
+            # reshape mask to (B, 1, 1, len_k) for broadcasting
+            mask = mask.unsqueeze(1).unsqueeze(2)
+
+        # compute attention
+        q, attn = self.attention(q, k, v, mask=mask)
+
+        # combine heads
+        q = q.transpose(1, 2).contiguous().view(B, num_q, -1)
+
+        q = self.dropout(self.fc(q))
+
+        # residual connection and layer norm
+        q += residual
+        q = self.layer_norm(q)
+
+        return q, attn
     
 class ScaledDotProductAttention(nn.Module):
     ''' Scaled Dot-Product Attention 
