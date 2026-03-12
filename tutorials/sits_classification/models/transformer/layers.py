@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 
 class EmbeddingLayer(nn.Module):
-    '''compute embeddings from raw pixel set data.
+    '''Compute embeddings from raw pixel set data.
     '''
 
     def __init__(self,n_channels, n_pixels, d_model):
@@ -31,7 +31,7 @@ class NDVI(nn.Module):
 
     def __init__(self, red, near_infrared, eps):
         super(NDVI, self).__init__()
-        # Define columns of interest
+        # Define the indices of the columns of interest
         self.red = red
         self.near_infrared = near_infrared
         self.eps = eps
@@ -43,7 +43,6 @@ class NDVI(nn.Module):
         NIR = x[:,:,self.near_infrared,:]
         RED = x[:,:,self.red,:]
         ndvi = (NIR - RED )/(NIR + RED + self.eps) #adding eps to avoid dividing by zero
-        #print("shape ndvi :",ndvi.shape)
         return ndvi
 
         
@@ -55,7 +54,7 @@ class BI(nn.Module):
     '''
     def __init__(self,blue, red, near_infrared, swir1, eps):
         super(BI, self).__init__()
-        # Define columns of interest
+        # Define indices of columns of interest
         self.blue = blue
         self.red = red
         self.near_infrared = near_infrared
@@ -72,7 +71,6 @@ class BI(nn.Module):
         NIR = x[:,:,self.near_infrared,:]
         BLUE = x[:,:,self.blue,:]
         BI = ((SWIR1 + RED) - (NIR + BLUE)) / ((SWIR1 + RED) + (NIR + BLUE) + self.eps)
-        #print("BI shape: ",BI.shape)
         return BI
     
 
