@@ -129,10 +129,7 @@ def rgb_render(
     return data_ready, out_dmin, out_dmax
 def mean_attention(model, dataset, select_class=None, batch_size=64, pad_value=0, max_len=24, device=None):
     """
-    Retorna Tensor [H, T_out] (1D por head), compatível com o plot do TP.
-
-    Funciona tanto para attn quadrada [T,T] quanto para attn com learnable query:
-    [Q,K] (ex.: Q=1, K=T).
+    Renvoie un tenseur [H, T_out] (1D par tête).
     """
     from dataset import Padding
 
@@ -168,9 +165,9 @@ def mean_attention(model, dataset, select_class=None, batch_size=64, pad_value=0
 
             _, attns = model(data, doys)
 
-            # normaliza attns -> tensor [L,B,H,*,*] ou [B,H,*,*]
+            # normalisation attns -> tensor [L,B,H,*,*] ou [B,H,*,*]
             if isinstance(attns, (list, tuple)):
-                # lista por layer: cada item pode ser [B,H,Q,K] ou [B,Q,K] se H=1
+                # Liste par couche : chaque élément peut être [B,H,Q,K] ou [B,Q,K] si H=1
                 a0 = attns[0]
                 if a0.dim() == 3:  # [B,Q,K] -> add H=1
                     attns = [a.unsqueeze(1) for a in attns]  # [B,1,Q,K]
@@ -181,25 +178,24 @@ def mean_attention(model, dataset, select_class=None, batch_size=64, pad_value=0
             elif attns.dim() == 4:      # [B,H,Q,K]
                 A = attns
             else:
-                raise ValueError(f"Formato inesperado de attns: {attns.shape}")
+                raise ValueError(f"Format inattendu de attns: {attns.shape}")
 
             B, H, Q, K = A.shape
 
-            # define T_out pelo eixo de KEYS (é isso que vira eixo-x no plot)
+            # define T_out
             if T_out is None:
-                T_out = min(K, max_len)  # max_len só como limite de segurança
+                T_out = min(K, max_len)
                 sum_mask = torch.zeros((H, T_out), device=device, dtype=A.dtype)
                 count_mask = torch.zeros((H, T_out), device=device, dtype=torch.float32)
 
-            # timesteps válidos (no TP normalmente padding é 0)
+            # définition des pas de temps valides à partir des doys
             valid = (doys != 0)  # [B, T_doys]
 
             for b in range(B):
-                idx = torch.where(valid[b])[0]          # índices válidos no doys
+                idx = torch.where(valid[b])[0]          # índices valides
                 if idx.numel() == 0:
                     continue
 
-                # idx tem que existir no eixo das KEYS (K)
                 idx = idx[idx < K]
                 if idx.numel() == 0:
                     continue
@@ -210,23 +206,22 @@ def mean_attention(model, dataset, select_class=None, batch_size=64, pad_value=0
                 Ab = A[b]  # [H,Q,K]
 
                 if Q == K:
-                    # atenção quadrada: dá pra cortar queries e keys
                     Ab2 = Ab[:, idx][:, :, idx]         # [H,tb,tb]
-                    mask_1d = Ab2.mean(dim=1)           # média sobre queries -> [H,tb]
+                    mask_1d = Ab2.mean(dim=1)           # moyenne sur les requêtes -> [H,tb]
                 else:
                     # learnable query / CLS: só corta nas KEYS
                     Ab2 = Ab[:, :, idx]                 # [H,Q,tb]
-                    mask_1d = Ab2.mean(dim=1)           # média sobre Q -> [H,tb]
+                    mask_1d = Ab2.mean(dim=1)           # moyenne sur les keys k -> [H,tb]
 
                 sum_mask[:, :tb] += mask_1d
                 count_mask[:, :tb] += 1.0
 
     if sum_mask is None or count_mask.sum().item() == 0:
-        raise ValueError(f"Nenhuma amostra encontrada para select_class={select_class}")
+        raise ValueError(f"Aucun exemple trouvé pour select_class={select_class}")
 
     mean_mask = sum_mask / torch.clamp(count_mask, min=1.0)  # [H,T_out]
 
-    # opcional: normaliza por head (deixa comparável e limita valores)
+    # optionnel: normalisation par tête
     mean_mask = mean_mask / (mean_mask.sum(dim=1, keepdim=True) + 1e-12)
 
     return mean_mask.detach().cpu()
